@@ -101,10 +101,3 @@
 - YAML config file alternative (`eksctl create cluster -f cluster.yaml`) for a reproducible, version-controlled cluster definition
 - eksctl also handles post-creation tasks: cluster upgrades, node group management, and IAM configuration
 
----
-
-## Repository
-
-The detailed step-by-step guide (console screenshots, kubectl outputs, YAML manifests) lives in the source repository:
-
-[k8s-eks-cluster-setup](https://github.com/m-bengueddache/k8s-eks-cluster-setup)
