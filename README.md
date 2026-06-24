@@ -19,43 +19,25 @@
 
 ### Partie 1 — Création du cluster depuis la console
 
-**Ressources créées :** IAM Role pour EKS, VPC CloudFormation (subnets publics + privés), cluster EKS, node group managé EC2 (`t3.small`), kubeconfig local
+IAM Role control plane, VPC via template CloudFormation officiel (subnets publics + privés), cluster EKS, node group managé `t3.small`, kubeconfig local.
 
-**Concepts démontrés :**
-- Rôle IAM dédié au control plane EKS : permet à AWS de provisionner les composants du cluster (load balancers, security groups) en votre nom
-- VPC spécifique à EKS via template CloudFormation officiel : séparation subnets publics / privés, communication control plane ↔ worker nodes
-- Options d'accès à l'API server : Public, Private, Public+Private — compromis entre sécurité et accessibilité
-- Add-ons cluster : CoreDNS, kube-proxy, VPC CNI, Metrics Server, EKS Pod Identity Agent
-- Node group : kubelet, kube-proxy et container runtime installés automatiquement sur les EC2 workers
+Le rôle IAM du control plane est distinct de celui des workers — il donne à AWS les droits de provisionner les composants du cluster (load balancers, security groups) en votre nom. Le VPC utilise le template CloudFormation officiel EKS plutôt que le VPC par défaut, pour la séparation réseau et les tags requis par EKS. L'API server propose trois modes d'accès (Public / Private / Public+Private) avec des compromis sécurité / opérabilité différents. Add-ons activés : CoreDNS, kube-proxy, VPC CNI, Metrics Server, EKS Pod Identity Agent.
 
 ### Partie 2 — Cluster Autoscaler
 
-**Ressources créées :** IAM Policy + IAM Role (Web Identity / OIDC), OIDC provider, déploiement Cluster Autoscaler dans `kube-system`
+IAM Policy + IAM Role Web Identity (OIDC), OIDC provider, déploiement Cluster Autoscaler dans `kube-system`.
 
-**Concepts démontrés :**
-- Problématique du bridge AWS ↔ Kubernetes : les Service Accounts Kubernetes ne sont pas des entités IAM — OIDC (OpenID Connect) établit la confiance entre les deux
-- IAM Role avec `Web Identity` : permet au Service Account du Cluster Autoscaler d'assumer le rôle et d'appeler l'API AWS (Auto Scaling Group)
-- Tags ASG requis pour l'autodiscovery : `k8s.io/cluster-autoscaler/enabled` et `k8s.io/cluster-autoscaler/<cluster-name>`
-- Annotation `safe-to-evict: "false"` pour éviter que l'autoscaler s'évince lui-même lors d'un scale-down
-- Test scale-up (20 réplicas → 3 nœuds EC2) et scale-down (1 réplica → retour à 1 nœud après ~10 minutes)
+Le problème central : les Service Accounts Kubernetes ne sont pas des entités IAM, OIDC sert de pont entre les deux. Le rôle Web Identity permet au Service Account de l'autoscaler d'appeler l'API Auto Scaling Group. Deux tags doivent être présents sur le ASG pour l'autodiscovery : `k8s.io/cluster-autoscaler/enabled` et `k8s.io/cluster-autoscaler/<cluster-name>`. L'annotation `safe-to-evict: "false"` empêche l'autoscaler de s'évincer lui-même lors d'un scale-down. Testé : 20 réplicas → 3 nœuds EC2, puis retour à 1 nœud en ~10 minutes.
 
 ### Partie 3 — Fargate
 
-**Ressources créées :** IAM Role Fargate pod execution, Fargate Profile `dev-profile` avec namespace + label selectors, namespace Kubernetes `dev`
+IAM Role pod execution, Fargate Profile `dev-profile` (namespace + label selectors), namespace `dev`.
 
-**Concepts démontrés :**
-- Fargate vs Node Group : 1 pod = 1 VM isolée managée par AWS (hors du compte client), pas de DaemonSet ni d'application stateful
-- Fargate Profile : règle de sélection de pods — namespace + labels doivent correspondre pour qu'un pod soit schedulé sur Fargate
-- Label selectors : filtrage fin à l'intérieur d'un namespace (ex. `profile: fargate`) pour mixer Fargate et EC2 dans le même namespace
-- Les VMs Fargate utilisent les subnets privés du VPC via ENI — leurs IPs proviennent de notre VPC même si les VMs sont dans le compte AWS
-- Validation avec `kubectl get pod -o wide` : chaque pod `dev` tourne sur un nœud `fargate-ip-*` distinct
+Fargate remplace les EC2 workers par 1 VM isolée par pod, gérée par AWS en dehors du compte client — pas de DaemonSet, pas de workload stateful. Le Fargate Profile définit les règles de sélection (namespace + labels) : les pods du namespace `dev` ne sont schedulés sur Fargate que si le label correspond (`profile: fargate`). Cela permet de mixer Fargate et EC2 dans le même namespace. Les VMs Fargate utilisent les subnets privés du VPC via ENI — leurs IPs viennent du CIDR du VPC même si les VMs tournent dans le compte AWS.
 
 ### Partie 4 — eksctl
 
-**Concepts démontrés :**
-- Un seul `eksctl create cluster` crée VPC, subnets, IAM roles, control plane, node group et kubeconfig automatiquement
-- Alternative au YAML config file (`eksctl create cluster -f cluster.yaml`) pour une définition reproductible et versionnée du cluster
-- eksctl gère aussi les upgrades, la gestion des node groups et la configuration IAM post-création
+Un seul `eksctl create cluster` crée VPC, subnets, IAM roles, control plane, node group et kubeconfig. Alternative : un fichier YAML config (`eksctl create cluster -f cluster.yaml`) pour une définition reproductible et versionnée. eksctl gère aussi les upgrades, la gestion des node groups et la configuration IAM post-création.
 
 ---
 
@@ -63,41 +45,22 @@
 
 ### Part 1 — Console Cluster Setup
 
-**Created resources:** EKS IAM Role, CloudFormation VPC (public + private subnets), EKS cluster, managed EC2 node group (`t3.small`), local kubeconfig
+IAM Role for the control plane, VPC via the official CloudFormation template (public + private subnets), EKS cluster, managed `t3.small` node group, local kubeconfig.
 
-**Concepts demonstrated:**
-- Dedicated IAM role for the EKS control plane: lets AWS provision cluster components (load balancers, security groups) on your behalf
-- EKS-specific VPC via the official CloudFormation template: public/private subnet separation, control plane ↔ worker node communication
-- API server access options: Public, Private, Public+Private — security vs. accessibility trade-off
-- Cluster add-ons: CoreDNS, kube-proxy, VPC CNI, Metrics Server, EKS Pod Identity Agent
-- Node group: kubelet, kube-proxy, and container runtime installed automatically on EC2 workers
+The control plane IAM role is separate from the worker node role — it lets AWS provision cluster components (load balancers, security groups) on your behalf. The VPC uses the official EKS CloudFormation template rather than the default VPC, for the network separation and subnet tags EKS requires. The API server has three access modes (Public / Private / Public+Private) with different security and operational trade-offs. Add-ons: CoreDNS, kube-proxy, VPC CNI, Metrics Server, EKS Pod Identity Agent.
 
 ### Part 2 — Cluster Autoscaler
 
-**Created resources:** IAM Policy + IAM Role (Web Identity / OIDC), OIDC provider, Cluster Autoscaler deployment in `kube-system`
+IAM Policy + IAM Role (Web Identity / OIDC), OIDC provider, Cluster Autoscaler deployment in `kube-system`.
 
-**Concepts demonstrated:**
-- The AWS ↔ Kubernetes trust gap: Kubernetes Service Accounts are not IAM entities — OIDC bridges the two
-- IAM Role with `Web Identity`: allows the Cluster Autoscaler Service Account to assume the role and call the AWS Auto Scaling API
-- ASG tags required for autodiscovery: `k8s.io/cluster-autoscaler/enabled` and `k8s.io/cluster-autoscaler/<cluster-name>`
-- `safe-to-evict: "false"` annotation to prevent the autoscaler from evicting itself during scale-down
-- Scale-up test (20 replicas → 3 EC2 nodes) and scale-down (1 replica → back to 1 node after ~10 minutes)
+The core challenge: Kubernetes Service Accounts are not IAM entities — OIDC bridges that gap. The Web Identity role lets the autoscaler's Service Account call the AWS Auto Scaling API. Two ASG tags are required for autodiscovery: `k8s.io/cluster-autoscaler/enabled` and `k8s.io/cluster-autoscaler/<cluster-name>`. The `safe-to-evict: "false"` annotation prevents the autoscaler from evicting itself during scale-down. Tested: 20 replicas scaled up to 3 EC2 nodes, then back to 1 node in ~10 minutes.
 
 ### Part 3 — Fargate
 
-**Created resources:** Fargate pod execution IAM Role, Fargate Profile `dev-profile` with namespace + label selectors, `dev` Kubernetes namespace
+Fargate pod execution IAM Role, `dev-profile` Fargate Profile (namespace + label selectors), `dev` namespace.
 
-**Concepts demonstrated:**
-- Fargate vs Node Group: 1 pod = 1 isolated VM managed by AWS (outside the customer account), no DaemonSets or stateful workloads
-- Fargate Profile: pod selection rule — namespace + labels must match for a pod to be scheduled on Fargate
-- Label selectors: fine-grained filtering within a namespace (e.g. `profile: fargate`) to mix Fargate and EC2 in the same namespace
-- Fargate VMs use private VPC subnets via ENI — their IPs come from our VPC even though the VMs run in AWS's account
-- Validated with `kubectl get pod -o wide`: each `dev` pod runs on its own distinct `fargate-ip-*` node
+Fargate replaces EC2 worker nodes with 1 isolated VM per pod, managed by AWS outside your account — no DaemonSets, no stateful workloads. The Fargate Profile sets the selection rules (namespace + labels): pods in the `dev` namespace are only scheduled on Fargate when the label matches (`profile: fargate`), which allows mixing Fargate and EC2 pods in the same namespace. Fargate VMs use private VPC subnets via ENI — their IPs come from the VPC CIDR even though the VMs run in AWS's account.
 
 ### Part 4 — eksctl
 
-**Concepts demonstrated:**
-- A single `eksctl create cluster` creates VPC, subnets, IAM roles, control plane, node group, and kubeconfig automatically
-- YAML config file alternative (`eksctl create cluster -f cluster.yaml`) for a reproducible, version-controlled cluster definition
-- eksctl also handles post-creation tasks: cluster upgrades, node group management, and IAM configuration
-
+A single `eksctl create cluster` creates VPC, subnets, IAM roles, control plane, node group, and kubeconfig. The YAML config alternative (`eksctl create cluster -f cluster.yaml`) gives a reproducible, version-controlled cluster definition. eksctl also handles post-creation tasks: cluster upgrades, node group management, and IAM configuration.
