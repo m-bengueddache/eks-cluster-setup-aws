@@ -61,11 +61,11 @@ flowchart TB
 
 - The console-based setup (this project's starting point) is inherently non-reproducible — only the `eksctl` config at the end is.
 - Autoscaler behavior was validated manually (20 replicas → 3 nodes → back to 1 in ~10 min) rather than under a sustained load test.
-- No Terraform/IaC layer yet — `eksctl` is the current reproducibility mechanism, not a full state-managed IaC tool.
+- `eksctl` (backed by CloudFormation) is the reproducibility mechanism here, not a state-managed IaC tool — see [terraform-aws-eks](https://github.com/m-bengueddache/terraform-aws-eks) for the same cluster provisioned with Terraform instead.
 
 ## Roadmap
 
-- [ ] Replace the `eksctl` cluster definition with a Terraform module (VPC, IAM, EKS, node group) for full state management
+- [x] Replace the `eksctl` cluster definition with a Terraform module for full state management — done as a separate project: [terraform-aws-eks](https://github.com/m-bengueddache/terraform-aws-eks)
 - [ ] Add a load test (e.g. `k6` or a batch Job) to validate autoscaler behavior under sustained, not just burst, load
 
 ---
